@@ -1,0 +1,112 @@
+Load Balance advisor (LBA)
+
+LOAD_BLANACE=ON in tnsnames.ora file- Client side load balance.
+
+Server side load balancing –LBA
+
+srvctl modify service –db rac –service orders –rlbgoal SERVICE_TIME –clbgoal SHORT
+srvctl modify service –db rac –service orders –rlbgoal THROUGHPUT  -clbgoal LONG
+
+If rlbgoal is not setup on database than all the connections are equally distributed on all services.
+
+#Transparent Application Failover (TAF)
+
+Type of TAF
+BASIC – create a new connection to a surviving instance.
+PRECONNECT – create a shadow connection with main connection
+
+Can configures at both client and server side.
+
+#Setting at client side in tnsnames.ora
+FAILOVER set to ON
+FAILOVER_MODE=[TYPE(SESSION|SELECT|NONE)| METHO(Basic| Preconnect) |  RETRIES | DELAY ]
+To make failover to work failover_mode TYPE value should be set. Failover will not work if we don’t set this parameter even failover is on.
+
+ctaf=
+  ( DESCRIPTION = ( FAILOVER = ON ) ( LOAD_BALANCE = ON)
+                (ADDRESS = (PROTOCOL = TCP)(HOST = rac1-vip)(PORT=1521))
+                (ADDRESS = (PROTOCOL = TCP)(HOST = rac2-vip)(PORT=1521))
+                (CONNECT_DATA = (SERVICE_NAME = hrsrv)
+                                ( FAILOVER_MODE = (TYPE=SELECT)
+                                                              (METHOD=BASIC)
+                                                              (RETRIES=10)
+                                                              (DELAY=10))
+                                )
+                )
+
+#Server Side TAF setting
+
+srvctl add service –d rac –service service_name
+
+[ -failovertype {NONE|SESSION|SELECT|TRANSACTION}]
+[-failovermethod {NONE|BASIC}]
+[-failoverretry {failover retries}]
+[-failoverdelay {failover delay}]
+
+srvctl add service –db rac –service hrsrv –preferred rac1 –available rac2,rac3
+–failovertype SELECT
+–failovermethod BASIC
+–failoverretry 10 –failoverdelay 5
+
+#Application Continuity
+
+srvctl  add service –db rac –service app2
+-failovertype TRANSACTION
+-commit_outcome TRUE
+-replay_init_time 1800 –failoverretry 30 –failoverdelay 10
+-retention 86400
+-notification TRUE –rlbgoal SERVICE_TIME –clbgoal SHORT
+
+# disable auto start clusterware
+crsctl disable crs
+crsctl enable crs
+
+# sanity reboot
+crsctl stat res -t
+crsctl stat res -t -init
+
+srvctl status database -d DEVDB
+srvctl stop database -d DEVDB
+srvctl start database -d DEVDB
+
+# run to scan disk
+oracleasm scandisk
+oracleasm listdisk
+
+oracleasm create disk DISK2 /dev/sdc1
+
+xhost
+su - grid
+asmca
+
+asmcmd
+lsdg
+
+crsctl check crs
+crsctl check has
+crsctl check css
+
+crsctl query has realeaseversion
+crsctl query has softwareversion
+
+$ORACLE_HOME/bin/kfod status=TRUE asm_diskstring='/dev/oracleasm/disks/*' disk=ALL #list all disk
+$ORACLE_HOME/bin/kfed read /dev/oracleasm/disks/DISK1 | egrep 'name|size|type' # get size of disk
+
+--grid
+ocrcheck
+ocrcheck -local
+ocrcheck -local -config
+
+set ORACLE_SID=+ASM1
+
+
+sqlplus / as sysasm
+
+show parameter INSTANCE_TYPE
+show parameter spfile
+
+# create diskgroup reco high redundancy
+failgroup failgrp1 DISK '/dev/oracleasm/disks/DISK1'
+failgroup failgrp2 DISK '/dev/oracleasm/disks/DISK2'
+failgroup failgrp3 DISK '/dev/oracleasm/disks/DISK3'
+ 
